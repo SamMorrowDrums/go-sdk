@@ -274,19 +274,29 @@ func toolForErr[In, Out any](t *Tool, h ToolHandlerFor[In, Out]) (*Tool, ToolHan
 		if req.Params.Arguments != nil {
 			input = req.Params.Arguments
 		}
-		// Validate input and apply defaults.
-		var err error
-		input, err = applySchema(input, inputResolved)
-		if err != nil {
+
+		// Validate input against schema (uses map internally for validation).
+		// This is an optimized path: we validate against the map but then
+		// unmarshal directly to struct and apply defaults to struct,
+		// avoiding an expensive re-marshal step.
+		if err := validateSchema(input, inputResolved); err != nil {
 			// TODO(#450): should this be considered a tool error? (and similar below)
 			return nil, fmt.Errorf("%w: validating \"arguments\": %v", jsonrpc2.ErrInvalidParams, err)
 		}
 
-		// Unmarshal and validate args.
+		// Unmarshal directly to typed struct.
 		var in In
 		if input != nil {
 			if err := json.Unmarshal(input, &in); err != nil {
 				return nil, fmt.Errorf("%w: %v", jsonrpc2.ErrInvalidParams, err)
+			}
+		}
+
+		// Apply defaults directly to the struct.
+		// This is more efficient than re-marshaling the map with defaults applied.
+		if inputResolved != nil {
+			if err := inputResolved.ApplyDefaults(&in); err != nil {
+				return nil, fmt.Errorf("%w: applying defaults: %v", jsonrpc2.ErrInvalidParams, err)
 			}
 		}
 

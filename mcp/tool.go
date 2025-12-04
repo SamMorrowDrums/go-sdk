@@ -103,6 +103,28 @@ func applySchema(data json.RawMessage, resolved *jsonschema.Resolved) (json.RawM
 	return data, nil
 }
 
+// validateSchema validates data against the provided schema, applying defaults
+// before validation. Unlike applySchema, it does not return the modified data.
+// This is an optimization for typed handlers that can apply defaults directly
+// to structs, avoiding an expensive re-marshal step.
+func validateSchema(data json.RawMessage, resolved *jsonschema.Resolved) error {
+	if resolved == nil {
+		return nil
+	}
+	v := make(map[string]any)
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &v); err != nil {
+			return fmt.Errorf("unmarshaling arguments: %w", err)
+		}
+	}
+	// Apply defaults before validation so that default values satisfy
+	// required field constraints.
+	if err := resolved.ApplyDefaults(&v); err != nil {
+		return fmt.Errorf("applying schema defaults:\n%w", err)
+	}
+	return resolved.Validate(&v)
+}
+
 // validateToolName checks whether name is a valid tool name, reporting a
 // non-nil error if not.
 func validateToolName(name string) error {
