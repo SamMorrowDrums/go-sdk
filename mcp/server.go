@@ -393,6 +393,29 @@ func setSchema[T any](sfield *any, rfield **jsonschema.Resolved) (zero any, err 
 			return zero, nil
 		}
 
+		// Check if T implements SchemaProvider for zero-reflection schema
+		var t T
+		if provider, ok := any(t).(ResolvedSchemaProvider); ok {
+			// Type provides both schema and resolved - maximum performance
+			internalSchema = provider.MCPSchema()
+			*sfield = internalSchema
+			*rfield = provider.MCPResolvedSchema()
+			globalSchemaCache.setByType(rt, internalSchema, *rfield)
+			return zero, nil
+		}
+		if provider, ok := any(t).(SchemaProvider); ok {
+			// Type provides schema - skip reflection, still need to resolve
+			internalSchema = provider.MCPSchema()
+			*sfield = internalSchema
+			resolved, err := internalSchema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+			if err != nil {
+				return zero, err
+			}
+			*rfield = resolved
+			globalSchemaCache.setByType(rt, internalSchema, resolved)
+			return zero, nil
+		}
+
 		// Generate schema via reflection (expensive, but cached for next time)
 		internalSchema, err = jsonschema.ForType(rt, &jsonschema.ForOptions{})
 		if err != nil {

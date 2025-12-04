@@ -159,3 +159,103 @@ func BenchmarkAddTool_MultipleTools(b *testing.B) {
 		AddTool(s, tool3, handler3)
 	}
 }
+
+// Types implementing SchemaProvider for benchmarking
+type BenchSchemaProviderInput struct {
+	Query   string `json:"query"`
+	Page    int    `json:"page"`
+	PerPage int    `json:"per_page"`
+}
+
+var benchSchemaProviderSchema = &jsonschema.Schema{
+	Type: "object",
+	Properties: map[string]*jsonschema.Schema{
+		"query":    {Type: "string", Description: "Search query"},
+		"page":     {Type: "integer", Description: "Page number"},
+		"per_page": {Type: "integer", Description: "Results per page"},
+	},
+	Required: []string{"query"},
+}
+
+func (BenchSchemaProviderInput) MCPSchema() *jsonschema.Schema {
+	return benchSchemaProviderSchema
+}
+
+// Type implementing ResolvedSchemaProvider for benchmarking
+type BenchResolvedSchemaProviderInput struct {
+	Query   string `json:"query"`
+	Page    int    `json:"page"`
+	PerPage int    `json:"per_page"`
+}
+
+var benchResolvedSchemaProviderSchema = &jsonschema.Schema{
+	Type: "object",
+	Properties: map[string]*jsonschema.Schema{
+		"query":    {Type: "string", Description: "Search query"},
+		"page":     {Type: "integer", Description: "Page number"},
+		"per_page": {Type: "integer", Description: "Results per page"},
+	},
+	Required: []string{"query"},
+}
+
+var benchResolvedSchemaProviderResolved, _ = benchResolvedSchemaProviderSchema.Resolve(nil)
+
+func (BenchResolvedSchemaProviderInput) MCPSchema() *jsonschema.Schema {
+	return benchResolvedSchemaProviderSchema
+}
+
+func (BenchResolvedSchemaProviderInput) MCPResolvedSchema() *jsonschema.Resolved {
+	return benchResolvedSchemaProviderResolved
+}
+
+type BenchOutput struct {
+	Results []string `json:"results"`
+	Total   int      `json:"total"`
+}
+
+// BenchmarkAddTool_SchemaProvider measures performance with SchemaProvider interface.
+func BenchmarkAddTool_SchemaProvider(b *testing.B) {
+	handler := func(ctx context.Context, req *CallToolRequest, in BenchSchemaProviderInput) (*CallToolResult, BenchOutput, error) {
+		return &CallToolResult{}, BenchOutput{}, nil
+	}
+
+	tool := &Tool{
+		Name:        "search",
+		Description: "Search for items",
+	}
+
+	// Reset cache to simulate cold start
+	globalSchemaCache.resetForTesting()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		s := NewServer(&Implementation{Name: "test", Version: "1.0"}, nil)
+		AddTool(s, tool, handler)
+	}
+}
+
+// BenchmarkAddTool_ResolvedSchemaProvider measures performance with ResolvedSchemaProvider.
+// This is the maximum performance achievable with pre-resolved schemas.
+func BenchmarkAddTool_ResolvedSchemaProvider(b *testing.B) {
+	handler := func(ctx context.Context, req *CallToolRequest, in BenchResolvedSchemaProviderInput) (*CallToolResult, BenchOutput, error) {
+		return &CallToolResult{}, BenchOutput{}, nil
+	}
+
+	tool := &Tool{
+		Name:        "search",
+		Description: "Search for items",
+	}
+
+	// Reset cache to simulate cold start
+	globalSchemaCache.resetForTesting()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		s := NewServer(&Implementation{Name: "test", Version: "1.0"}, nil)
+		AddTool(s, tool, handler)
+	}
+}
