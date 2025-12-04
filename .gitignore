@@ -36,3 +36,4 @@ $RECYCLE.BIN/
 
 # Linux
 .nfs*
+cmd/mcpgen/mcpgen

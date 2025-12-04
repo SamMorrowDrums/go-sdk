@@ -118,3 +118,98 @@ func TestGeneratorNoTypes(t *testing.T) {
 		t.Errorf("unexpected error message: %s", out)
 	}
 }
+
+func TestGeneratorEnumDetection(t *testing.T) {
+	// Create a temporary directory with test types that use Go const enums
+	tmpDir, err := os.MkdirTemp("", "mcpgen-enum-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Write test input file with const-based enums
+	inputFile := filepath.Join(tmpDir, "types.go")
+	input := `package testpkg
+
+type Priority string
+
+const (
+	PriorityHigh   Priority = "high"
+	PriorityMedium Priority = "medium"
+	PriorityLow    Priority = "low"
+)
+
+type TaskInput struct {
+	Title    string   ` + "`json:\"title\" jsonschema:\"required\"`" + `
+	Priority Priority ` + "`json:\"priority\"`" + `
+}
+`
+
+	if err := os.WriteFile(inputFile, []byte(input), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write go.mod
+	goMod := "module testpkg\n\ngo 1.24\n\nrequire github.com/google/jsonschema-go v0.3.0\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run go mod tidy
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = tmpDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy failed: %v\n%s", err, out)
+	}
+
+	// Explicitly get the jsonschema dependency
+	getCmd := exec.Command("go", "get", "github.com/google/jsonschema-go/jsonschema")
+	getCmd.Dir = tmpDir
+	if out, err := getCmd.CombinedOutput(); err != nil {
+		t.Fatalf("go get failed: %v\n%s", err, out)
+	}
+
+	// Build the generator
+	genPath := filepath.Join(t.TempDir(), "mcpgen")
+	buildCmd := exec.Command("go", "build", "-o", genPath, ".")
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("building generator: %v\n%s", err, out)
+	}
+
+	// Run the generator
+	outputFile := filepath.Join(tmpDir, "testpkg_mcp_gen.go")
+	genCmd := exec.Command(genPath, "-type=TaskInput", "-output="+outputFile)
+	genCmd.Dir = tmpDir
+	if out, err := genCmd.CombinedOutput(); err != nil {
+		t.Fatalf("running generator: %v\n%s", err, out)
+	}
+
+	// Read the generated file
+	generated, err := os.ReadFile(outputFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(generated)
+
+	// Verify enum values were detected and included
+	enumChecks := []string{
+		`"high"`,
+		`"medium"`,
+		`"low"`,
+		"Enum:",
+	}
+
+	for _, check := range enumChecks {
+		if !strings.Contains(content, check) {
+			t.Errorf("generated code missing enum value %q\n\nGenerated:\n%s", check, content)
+		}
+	}
+
+	// Verify the generated code compiles
+	verifyCmd := exec.Command("go", "build", ".")
+	verifyCmd.Dir = tmpDir
+	if out, err := verifyCmd.CombinedOutput(); err != nil {
+		t.Errorf("generated code does not compile: %v\n%s\n\nGenerated:\n%s", err, out, content)
+	}
+}

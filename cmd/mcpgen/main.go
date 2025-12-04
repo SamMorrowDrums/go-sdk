@@ -27,6 +27,7 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/format"
 	"go/token"
 	"go/types"
@@ -34,6 +35,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -226,7 +228,71 @@ func (g *Generator) extractFieldInfo(field *types.Var, tag string) *FieldInfo {
 	// Determine JSON schema type from Go type
 	info.Type = g.goTypeToJSONSchemaType(field.Type())
 
+	// Auto-detect enum values from const declarations if field type is a named string type
+	// and no explicit enum was specified in the tag
+	if len(info.Enum) == 0 && info.Type == "string" {
+		if named, ok := field.Type().(*types.Named); ok {
+			if enumValues := g.findEnumValues(named); len(enumValues) > 0 {
+				info.Enum = enumValues
+			}
+		}
+	}
+
 	return info
+}
+
+// findEnumValues finds const values defined for a named string type.
+// This allows automatic enum detection from Go const declarations like:
+//
+//	type Priority string
+//	const (
+//	    PriorityHigh   Priority = "high"
+//	    PriorityMedium Priority = "medium"
+//	    PriorityLow    Priority = "low"
+//	)
+func (g *Generator) findEnumValues(named *types.Named) []string {
+	// Only handle string-based types
+	basic, ok := named.Underlying().(*types.Basic)
+	if !ok || basic.Kind() != types.String {
+		return nil
+	}
+
+	typeName := named.Obj().Name()
+	typePkg := named.Obj().Pkg()
+
+	var values []string
+
+	// Look through all const declarations in the package
+	scope := typePkg.Scope()
+	for _, name := range scope.Names() {
+		obj := scope.Lookup(name)
+		constObj, ok := obj.(*types.Const)
+		if !ok {
+			continue
+		}
+
+		// Check if this const is of our named type
+		if types.Identical(constObj.Type(), named) {
+			// Extract the string value from the const
+			val := constObj.Val()
+			if val.Kind() == constant.String {
+				// Get the string value without quotes
+				strVal := constant.StringVal(val)
+				values = append(values, strVal)
+			}
+		}
+	}
+
+	// Sort for deterministic output
+	sort.Strings(values)
+
+	// Only return if we found at least 2 values (single value isn't really an enum)
+	if len(values) >= 2 {
+		log.Printf("found enum type %s with values: %v", typeName, values)
+		return values
+	}
+
+	return nil
 }
 
 // goTypeToJSONSchemaType converts a Go type to a JSON schema type string.
