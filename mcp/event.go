@@ -26,6 +26,13 @@ import (
 // Enable for debugging.
 const validateMemoryEventStore = false
 
+// bufferPool is a pool of bytes.Buffer for reducing allocations in writeEvent.
+var bufferPool = sync.Pool{
+	New: func() any {
+		return new(bytes.Buffer)
+	},
+}
+
 // An Event is a server-sent event.
 // See https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#fields.
 type Event struct {
@@ -42,17 +49,20 @@ func (e Event) Empty() bool {
 
 // writeEvent writes the event to w, and flushes.
 func writeEvent(w io.Writer, evt Event) (int, error) {
-	var b bytes.Buffer
+	b := bufferPool.Get().(*bytes.Buffer)
+	b.Reset()
+	defer bufferPool.Put(b)
+
 	if evt.Name != "" {
-		fmt.Fprintf(&b, "event: %s\n", evt.Name)
+		fmt.Fprintf(b, "event: %s\n", evt.Name)
 	}
 	if evt.ID != "" {
-		fmt.Fprintf(&b, "id: %s\n", evt.ID)
+		fmt.Fprintf(b, "id: %s\n", evt.ID)
 	}
 	if evt.Retry != "" {
-		fmt.Fprintf(&b, "retry: %s\n", evt.Retry)
+		fmt.Fprintf(b, "retry: %s\n", evt.Retry)
 	}
-	fmt.Fprintf(&b, "data: %s\n\n", string(evt.Data))
+	fmt.Fprintf(b, "data: %s\n\n", string(evt.Data))
 	n, err := w.Write(b.Bytes())
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()

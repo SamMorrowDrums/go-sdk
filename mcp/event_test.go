@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -293,6 +294,36 @@ func BenchmarkMemoryEventStore(b *testing.B) {
 				store.Append(ctx, sessionID, streamID, payload)
 			}
 			b.ReportMetric(float64(test.datasize)*float64(b.N)/time.Since(start).Seconds(), "bytes/s")
+		})
+	}
+}
+
+func BenchmarkWriteEvent(b *testing.B) {
+	tests := []struct {
+		name string
+		evt  Event
+	}{
+		{
+			name: "small",
+			evt:  Event{Name: "message", ID: "1", Data: []byte(`{"hello":"world"}`)},
+		},
+		{
+			name: "medium",
+			evt:  Event{Name: "message", ID: "123", Data: make([]byte, 1024)},
+		},
+		{
+			name: "large",
+			evt:  Event{Name: "message", ID: "12345", Data: make([]byte, 64*1024)},
+		},
+	}
+
+	for _, test := range tests {
+		b.Run(test.name, func(b *testing.B) {
+			w := io.Discard
+			b.ResetTimer()
+			for range b.N {
+				writeEvent(w, test.evt)
+			}
 		})
 	}
 }

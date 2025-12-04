@@ -5,10 +5,8 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1296,16 +1294,11 @@ type pageToken struct {
 	LastUID string // The unique ID of the last resource seen.
 }
 
-// encodeCursor encodes a unique identifier (UID) into a opaque pagination cursor
-// by serializing a pageToken struct.
+// encodeCursor encodes a unique identifier (UID) into an opaque pagination cursor.
+// Since the cursor only contains a single string UID, we use simple base64 encoding
+// which is much faster than gob serialization.
 func encodeCursor(uid string) (string, error) {
-	var buf bytes.Buffer
-	token := pageToken{LastUID: uid}
-	encoder := gob.NewEncoder(&buf)
-	if err := encoder.Encode(token); err != nil {
-		return "", fmt.Errorf("failed to encode page token: %w", err)
-	}
-	return base64.URLEncoding.EncodeToString(buf.Bytes()), nil
+	return base64.URLEncoding.EncodeToString([]byte(uid)), nil
 }
 
 // decodeCursor decodes an opaque pagination cursor into the original pageToken struct.
@@ -1314,14 +1307,7 @@ func decodeCursor(cursor string) (*pageToken, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode cursor: %w", err)
 	}
-
-	var token pageToken
-	buf := bytes.NewBuffer(decodedBytes)
-	decoder := gob.NewDecoder(buf)
-	if err := decoder.Decode(&token); err != nil {
-		return nil, fmt.Errorf("failed to decode page token: %w, cursor: %v", err, cursor)
-	}
-	return &token, nil
+	return &pageToken{LastUID: string(decodedBytes)}, nil
 }
 
 // paginateList is a generic helper that returns a paginated slice of items
