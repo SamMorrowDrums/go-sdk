@@ -100,6 +100,74 @@ func (CreateIssueInput) MCPResolvedSchema() *jsonschema.Resolved {
 - `default=value` - Sets the default value
 - `enum=a|b|c` - Sets allowed enum values (pipe-separated)
 
+## Enum Support
+
+`mcpgen` provides two ways to define enums:
+
+### 1. Automatic Detection from Go Constants (Recommended)
+
+Define a named string type with const declarations, and `mcpgen` will automatically detect the enum values:
+
+```go
+// Define the enum type and its values
+type Priority string
+
+const (
+    PriorityHigh   Priority = "high"
+    PriorityMedium Priority = "medium"
+    PriorityLow    Priority = "low"
+)
+
+// Use it in your input struct
+type TaskInput struct {
+    Title    string   `json:"title" jsonschema:"required"`
+    Priority Priority `json:"priority" jsonschema:"description=Task priority level"`
+}
+```
+
+**Generated schema:**
+
+```go
+"priority": {
+    Type:        "string",
+    Description: "Task priority level",
+    Enum:        []any{"high", "low", "medium"},
+},
+```
+
+This approach:
+- Uses idiomatic Go patterns
+- Provides compile-time type safety
+- Automatically stays in sync with your Go code
+- Works with any named string type that has 2+ const values
+
+### 2. Explicit Tag-Based Enums
+
+For simple cases or when you can't define a separate type, use the `enum` tag:
+
+```go
+type UpdateIssueInput struct {
+    ID    int    `json:"id" jsonschema:"required"`
+    State string `json:"state" jsonschema:"enum=open|closed"`
+}
+```
+
+**Generated schema:**
+
+```go
+"state": {
+    Type: "string",
+    Enum: []any{"open", "closed"},
+},
+```
+
+### Enum Best Practices
+
+1. **Prefer const-based enums** for better type safety and IDE support
+2. **Use explicit tags** when the enum is only used in one place
+3. **Explicit tags take precedence** over auto-detection if both are present
+4. **Keep enum values lowercase** for consistency with JSON conventions
+
 ## Flags
 
 - `-type` - Comma-separated list of type names to generate (required)
