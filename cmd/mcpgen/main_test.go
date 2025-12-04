@@ -5,11 +5,11 @@
 package main
 
 import (
-"os"
-"os/exec"
-"path/filepath"
-"strings"
-"testing"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
 )
 
 func TestGenerator(t *testing.T) {

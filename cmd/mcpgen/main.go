@@ -33,6 +33,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -255,16 +256,11 @@ func (g *Generator) goTypeToJSONSchemaType(t types.Type) string {
 	return "object"
 }
 
-// getTagValue extracts a value from a struct tag.
+// getTagValue extracts a value from a struct tag using Go's reflect.StructTag.
 func getTagValue(tag, key string) string {
-	for _, part := range strings.Split(tag, " ") {
-		part = strings.Trim(part, "`")
-		if strings.HasPrefix(part, key+":") {
-			value := strings.TrimPrefix(part, key+":")
-			return strings.Trim(value, `"`)
-		}
-	}
-	return ""
+	// Use reflect.StructTag to properly parse the tag
+	st := reflect.StructTag(tag)
+	return st.Get(key)
 }
 
 // generate creates the output file with SchemaProvider implementations.
